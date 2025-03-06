@@ -38,7 +38,7 @@ namespace MRD {
         }
         void append(const uint8_t* data, const size_t len) {
             if (len > buf_size) {
-                resize(buf_size - (len + data_length));
+                resize(len  + data_length - buf_size);
             }
             else if (data_begin + len > buffer_end) {
                 memmove(buffer_begin, data_begin, data_length);
@@ -52,8 +52,8 @@ namespace MRD {
             data_length += len;
             data_end += len;
         }
-        void append(const std::vector<uint8_t>& data, const size_t len) {
-            append(data.data(), len);
+        void append(const std::vector<uint8_t>& data) {
+            append(data.data(), data.size());
         }
         void append(const Buffer& src, const size_t len) {
             append(src.buffer_begin, len);

@@ -16,7 +16,7 @@
 
 #include "Buffer.h"
 #include "MRD_server.h"
-
+#include <map>
 using namespace MRD;
 // int Server::fd = -1;
 static void fd_set_nb(int fd) {
@@ -44,6 +44,55 @@ static Conn *handle_accept(int fd) {
     return conn;
 }
 
+
+static int32_t parse_req(const uint8_t *&data, size_t size, std::vector<std::string> &out) {
+    const auto *end = reinterpret_cast<const uint8_t *>(data + size);
+    uint32_t nstr = 0;
+    if (!read_u32(data, end, nstr)) {
+        return -1;
+    }
+    if (nstr > MAX_MSG) {
+        return -1;
+    }
+    while (out.size() < nstr) {
+        uint32_t len = 0;
+        if (!read_u32(data, end, len)) {
+            return -1;
+        }
+        out.push_back(std::string());
+        if (!read_str(data, end, len, out.back())) {
+            return -1;
+        }
+    }
+    if (data != end) {
+        return -1;
+    }
+    return 0;
+}
+
+// std::map<std::string, std::string> Server::g_data;
+HashMap Server::g_data;
+
+void Server::do_request(std::vector<std::string>& cmd, Response& out) {
+    if (cmd.size() == 2 && cmd[0] == "get") {
+        return do_get(cmd, out);
+    }
+    if (cmd.size() == 3 && cmd[0] == "set") {
+        return do_set(cmd, out);
+    }
+    if (cmd.size() == 2 && cmd[0] == "del") {
+        return do_del(cmd, out);
+    }
+    out.status = Response::RESP_ERR;       // unrecognized command
+}
+
+void Server::make_response(const Response& resp, Buffer& out) {
+    const uint32_t resp_len = 4 + static_cast<uint32_t>(resp.data.size());
+    out.append(reinterpret_cast<const uint8_t *>(&resp_len), 4);
+    out.append(reinterpret_cast<const uint8_t *>(&resp.status), 4);
+    out.append(resp.data.data(), resp.data.size());
+}
+
 bool Server::try_one_request(Conn* conn) {
     if (conn->incoming.data_length < 4) {
         return false;
@@ -59,9 +108,16 @@ bool Server::try_one_request(Conn* conn) {
         return false;
     }
     const uint8_t *request = &conn->incoming.data_begin[4];
-    std::cout << "len:" << len << " data:" << std::string((const char*)request, len > 100 ? 100 : len) << std::endl;
-    conn->outgoing.append((const uint8_t*)&len, 4);
-    conn->outgoing.append(request, len);
+
+    std::vector<std::string> cmd;
+    if (parse_req(request, len, cmd) < 0) {
+        msg("bad request");
+        conn->want_close = true;
+        return false;
+    }
+    Response resp;
+    do_request(cmd, resp);
+    make_response(resp, conn->outgoing);
     conn->incoming.consume(4 + len);
     return true;
 }
@@ -83,8 +139,8 @@ void Server::handle_write(Conn* conn) {
 }
 
 void Server::handle_read(Conn* conn) {
-    std::unique_ptr<uint8_t> buf(new uint8_t[MAX_MSG]);
-    ssize_t rv = read(conn->fd, buf.get(), MAX_MSG);
+    uint8_t buf[64 * 1024];
+    ssize_t rv = read(conn->fd, buf, sizeof(buf));
     if (rv < 0) {
         conn->want_close = true;
         return;
@@ -98,7 +154,7 @@ void Server::handle_read(Conn* conn) {
         conn->want_close = true;
         return;
     }
-    conn->incoming.append(buf.get(), static_cast<size_t>(rv));
+    conn->incoming.append(buf, static_cast<size_t>(rv));
     while (try_one_request(conn));
     if (!conn->outgoing.empty()) {
         conn->want_read = false;
@@ -189,6 +245,51 @@ void Server::init() {
         die("listen()");
     }
 }
+
+void Server::do_get(std::vector<std::string> &cmd, Response &out) {
+    LookupKey key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = str_hash( reinterpret_cast<uint8_t *>(key.key.data()), key.key.size());
+    //hashtable lookup
+    HNode *node = g_data.lookup(key.node, key_eq);
+    if (!node) {
+        out.status = Response::RESP_NX;
+        return;
+    }
+    const std::string &val = container_of(node, Entry, node)->val;
+    assert(val.size() <= MAX_MSG);
+    out.data.assign(val.begin(), val.end());
+}
+
+void Server::do_set(std::vector<std::string> &cmd, Response &out) {
+    LookupKey key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = str_hash( reinterpret_cast<uint8_t *>(key.key.data()), key.key.size());
+    //hashtable lookup
+    HNode *node = g_data.lookup(key.node, key_eq);
+    if (node) {
+        container_of(node, Entry, node)->val.swap(cmd[2]);
+    }
+    else {
+        Entry *entry = new Entry();
+        entry->key.swap(key.key);
+        entry->node.hcode = key.node.hcode;
+        entry->val.swap(cmd[2]);
+        g_data.insert(&entry->node);
+    }
+}
+void Server::do_del(std::vector<std::string> &cmd, Response &out) {
+    LookupKey key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = str_hash( reinterpret_cast<uint8_t *>(key.key.data()), key.key.size());
+    //hashtable lookup
+    HNode *node = g_data.erase(key.node, key_eq);
+    if (node) { // deallocate the pair
+        delete container_of(node, Entry, node);
+    }
+}
+
+
 int main() {
     Server::init();
     Server::main_loop();
