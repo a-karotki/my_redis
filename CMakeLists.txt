@@ -3,12 +3,10 @@ project(MRD)
 enable_testing()
 
 set(CMAKE_CXX_STANDARD 17)
-add_executable(server server/server.cpp
-        server/Buffer.h
-        server/MRD_server.h)
-add_executable(client client/client.cpp)
+set(MRD_shared_include_dir ${CMAKE_CURRENT_SOURCE_DIR}/shared/include)
+set(MRD_server_dir ${CMAKE_CURRENT_SOURCE_DIR}/server)
 
-target_include_directories(server PUBLIC shared)
-target_include_directories(client PUBLIC shared)
-
-add_test(NAME ServerClientTest COMMAND ${CMAKE_SOURCE_DIR}/test.sh)
+add_subdirectory(client)
+add_subdirectory(shared)
+add_subdirectory(server)
+add_subdirectory(test)
