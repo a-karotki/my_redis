@@ -150,3 +150,43 @@ TEST(HashmapTest, SizeCorectness) {
     map.clear();
     EXPECT_EQ(map.size(), 0);
 }
+static bool cb_keys(HNode *node, void *arg) {
+    Buffer &out = *static_cast<Buffer *>(arg);
+    const std::string &key = container_of(node, Entry, node)->key;
+    out_str(out, key.data(), key.size());
+    return true;
+}
+static uint8_t get_tag(const uint8_t* ptr) {
+    return *ptr;
+}
+static uint32_t get_len(const uint8_t* tag_ptr) {
+    return *(reinterpret_cast<const uint32_t*>(tag_ptr + 1));
+}
+static std::string get_str(const uint8_t* tag_ptr, size_t n) {
+    auto *str_ptr = reinterpret_cast<const char*>(tag_ptr + 5);
+    return std::string{str_ptr, n};
+}
+TEST(HashmapTest, Foreach) {
+    std::set<std::string> s1{};
+    for (int i = 0; i < 100; ++i) {
+        auto e = new Entry();
+        e->key = std::to_string(i);
+        e->val = std::to_string(i);
+        e->node.hcode = str_hash(reinterpret_cast<uint8_t*>(e->key.data()), e->key.length());
+        map.insert(&e->node);
+        s1.insert(std::to_string(i));
+    }
+    Buffer b{4096};
+    // out_arr(b, map.size());
+    map.foreach(cb_keys, &b);
+    int i = 0;
+    std::set<std::string> s2{};
+    while (!b.empty()) {
+        EXPECT_EQ(get_tag(b.data_begin), TAG_STR);
+        uint32_t len = get_len(b.data_begin);
+        std::string res = get_str(b.data_begin, len);
+        s2.insert(res);
+        b.consume(1 + 4 + len);
+    }
+    EXPECT_EQ(s1, s2);
+}
