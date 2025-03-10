@@ -7,6 +7,7 @@
 #include "MRD_hashtable.h"
 
 // #include <bits/unordered_map.h>
+#include "Buffer.h"
 using namespace MRD;
 
 void HTab::init(size_t n) {
@@ -45,6 +46,17 @@ HNode *HTab::detach(HNode **from) {
     *from = node->next;    // update the incoming pointer to the target
     size--;
     return node;
+}
+
+bool HTab::foreach(bool(*f)(HNode *, void *), void *arg) const {
+    for (size_t i = 0; mask != 0 && i <= mask; ++i) {
+        for (HNode *node = tab[i]; node != nullptr; node = node->next) {
+            if (!f(node, arg)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 void HTab::clear() {
@@ -87,6 +99,11 @@ HNode* HashMap::lookup(HNode& key, bool (&eq)(HNode&, HNode&)) const {
         return *from;
     }
     return nullptr;
+}
+
+void HashMap::foreach(bool(*f)(HNode *, void *), void *arg) {
+    if (!newer.foreach(f, arg)) return;
+    older.foreach(f, arg);
 }
 
 void HashMap::insert(HNode *node) {

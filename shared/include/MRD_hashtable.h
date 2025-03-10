@@ -29,6 +29,7 @@ namespace MRD{
 
         HNode **lookup(HNode &key, bool (&eq)(HNode &, HNode &)) const;
         HNode *detach(HNode **from);
+        bool foreach(bool (*f) (HNode*, void *), void* arg) const;
         void clear();
     };
 
@@ -40,6 +41,7 @@ namespace MRD{
         size_t size() const;
         void insert(HNode *node);
         HNode *lookup(HNode &key, bool (&eq)(HNode&, HNode&)) const;
+        void foreach(bool (*f) (HNode*, void*), void* arg);
     private:
         const size_t k_rehashing_work = 128;
         const size_t k_max_load_factor = 8;

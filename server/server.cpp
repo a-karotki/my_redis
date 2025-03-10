@@ -45,9 +45,12 @@ static Conn *handle_accept(int fd) {
 }
 
 
-static int32_t parse_req(const uint8_t *&data, size_t size, std::vector<std::string> &out) {
-    const auto *end = reinterpret_cast<const uint8_t *>(data + size);
+int32_t Server::parse_req(const uint8_t *&data, size_t size, std::vector<std::string> &out) {
+    const auto *end = data + size;
+    uint8_t tag = -1;
     uint32_t nstr = 0;
+    if (!read_u8(data, end, tag) || tag != TAG_ARR)
+        return -1;
     if (!read_u32(data, end, nstr)) {
         return -1;
     }
@@ -56,6 +59,10 @@ static int32_t parse_req(const uint8_t *&data, size_t size, std::vector<std::str
     }
     while (out.size() < nstr) {
         uint32_t len = 0;
+        uint8_t tag = -1;
+        if (!read_u8(data,end, tag)) {
+            return -1;
+        }
         if (!read_u32(data, end, len)) {
             return -1;
         }
@@ -73,7 +80,7 @@ static int32_t parse_req(const uint8_t *&data, size_t size, std::vector<std::str
 // std::map<std::string, std::string> Server::g_data;
 HashMap Server::g_data;
 
-void Server::do_request(std::vector<std::string>& cmd, Response& out) {
+size_t Server::do_request(std::vector<std::string> &cmd, Buffer &out) {
     if (cmd.size() == 2 && cmd[0] == "get") {
         return do_get(cmd, out);
     }
@@ -82,15 +89,21 @@ void Server::do_request(std::vector<std::string>& cmd, Response& out) {
     }
     if (cmd.size() == 2 && cmd[0] == "del") {
         return do_del(cmd, out);
-    }
-    out.status = Response::RESP_ERR;       // unrecognized command
+    }       // unrecognized command
+    return 0;
+}
+void Server::response_begin(Buffer& out) {
+    out.append_u32(0);
 }
 
-void Server::make_response(const Response& resp, Buffer& out) {
-    const uint32_t resp_len = 4 + static_cast<uint32_t>(resp.data.size());
-    out.append(reinterpret_cast<const uint8_t *>(&resp_len), 4);
-    out.append(reinterpret_cast<const uint8_t *>(&resp.status), 4);
-    out.append(resp.data.data(), resp.data.size());
+void Server::response_end(Buffer& out, const uint32_t rv) {
+    if (rv > MAX_MSG) {
+        out_err(out, "response is too long");
+    }
+    auto len_ptr = out.data_end - rv - 4;
+    if (len_ptr < out.data_begin )
+        out_err(out, "unexpected error in error");
+    memcpy(len_ptr, &rv, 4);
 }
 
 bool Server::try_one_request(Conn* conn) {
@@ -115,9 +128,9 @@ bool Server::try_one_request(Conn* conn) {
         conn->want_close = true;
         return false;
     }
-    Response resp;
-    do_request(cmd, resp);
-    make_response(resp, conn->outgoing);
+    response_begin(conn->outgoing);
+    const uint32_t rv = do_request(cmd, conn->outgoing);
+    response_end(conn->outgoing, rv);
     conn->incoming.consume(4 + len);
     return true;
 }
@@ -246,22 +259,21 @@ void Server::init() {
     }
 }
 
-void Server::do_get(std::vector<std::string> &cmd, Response &out) {
+uint32_t Server::do_get(std::vector<std::string> &cmd, Buffer &out) {
     LookupKey key;
     key.key.swap(cmd[1]);
     key.node.hcode = str_hash( reinterpret_cast<uint8_t *>(key.key.data()), key.key.size());
     //hashtable lookup
     HNode *node = g_data.lookup(key.node, key_eq);
     if (!node) {
-        out.status = Response::RESP_NX;
-        return;
+        return out_err(out, "do_get");;
     }
     const std::string &val = container_of(node, Entry, node)->val;
     assert(val.size() <= MAX_MSG);
-    out.data.assign(val.begin(), val.end());
+    return out_str(out, val.data(), val.length());
 }
 
-void Server::do_set(std::vector<std::string> &cmd, Response &out) {
+uint32_t Server::do_set(std::vector<std::string> &cmd, Buffer &out) {
     LookupKey key;
     key.key.swap(cmd[1]);
     key.node.hcode = str_hash( reinterpret_cast<uint8_t *>(key.key.data()), key.key.size());
@@ -277,8 +289,10 @@ void Server::do_set(std::vector<std::string> &cmd, Response &out) {
         entry->val.swap(cmd[2]);
         g_data.insert(&entry->node);
     }
+    return out_nil(out);
 }
-void Server::do_del(std::vector<std::string> &cmd, Response &out) {
+
+uint32_t Server::do_del(std::vector<std::string> &cmd, Buffer &out) {
     LookupKey key;
     key.key.swap(cmd[1]);
     key.node.hcode = str_hash( reinterpret_cast<uint8_t *>(key.key.data()), key.key.size());
@@ -287,6 +301,7 @@ void Server::do_del(std::vector<std::string> &cmd, Response &out) {
     if (node) { // deallocate the pair
         delete container_of(node, Entry, node);
     }
+    return out_int(out, node ? 1 : 0); //number of removed elements
 }
 
 
