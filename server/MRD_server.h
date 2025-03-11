@@ -10,6 +10,7 @@
 #include "Buffer.h"
 #include "MRD_hashtable.h"
 #include "MRD_utility.h"
+#include <>
 namespace MRD {
 
     struct Entry{

@@ -28,6 +28,10 @@ add_executable(
         utility_test
         utility_test.cpp
 )
+add_executable(
+        avl_test
+        avl_test.cpp
+)
 target_link_libraries(
         hashmap_test
         PRIVATE
@@ -44,6 +48,12 @@ target_link_libraries(
         PRIVATE
         GTest::gtest_main
 )
+target_link_libraries(
+        avl_test
+        PRIVATE
+        GTest::gtest_main
+        MRD_shared_avl
+)
 target_include_directories(
         utility_test
         PRIVATE
@@ -55,7 +65,13 @@ target_include_directories(
         ${MRD_server_dir}
         ${MRD_shared_include_dir}
 )
+target_include_directories(
+        avl_test
+        PRIVATE
+        ${MRD_shared_include_dir}
+)
 include(GoogleTest)
 gtest_discover_tests(hashmap_test)
 gtest_discover_tests(buffer_test)
 gtest_discover_tests(utility_test)
+gtest_discover_tests(avl_test)
