@@ -25,7 +25,7 @@ struct Container {
 // };
 static void add(Container &c, uint32_t val) {
         Data *data = new Data();    // allocate the data
-        data->node.init();
+        data->node = AVLNode();
         data->val = val;
 
         AVLNode *cur = nullptr;        // current node
@@ -199,4 +199,28 @@ TEST(AVLTest, RemoveRand) {
         container_verify(c, ref);
         dispose(c);
     }
+}
+
+TEST(AVLTest, Offset) {
+    Container c;
+    for (uint32_t i = 0; i != 100; ++i) {
+        add(c, i);
+    }
+    AVLNode *min = c.root;
+    while (min->left) {
+        min = min->left;
+    }
+    for (uint32_t i = 0; i != 100; ++i) {
+        AVLNode* node =  AVLNode::offset(min, i);
+        EXPECT_EQ(container_of(node, Data, node)->val, i);
+        for (uint32_t j = 0; j != 100; ++j) {
+            int64_t offset = static_cast<int64_t>(j) - static_cast<int64_t>(i);
+            AVLNode *n2 = AVLNode::offset(node, offset);
+            auto val = container_of(n2, Data, node)->val;
+            EXPECT_EQ(val, j);
+        }
+        ASSERT_FALSE(AVLNode::offset(node, -i - 1));
+        ASSERT_FALSE(AVLNode::offset(node, 100 - i));
+    }
+    dispose(c);
 }

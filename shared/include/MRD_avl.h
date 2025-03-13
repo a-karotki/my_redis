@@ -15,16 +15,10 @@ namespace MRD{
         AVLNode* right;
         uint32_t height; //subtree hight
         uint32_t count; //subtree size
+        AVLNode();
 
-        void init() {
-            left = right = parent = nullptr;
-            height = 1;
-            count = 1;
-        }
-        void update() {
-            height = std::max(h(left), h(right)) + 1;
-            count = 1 + cnt(left) + cnt(right);
-        }
+        void update();
+
         static AVLNode *del(AVLNode *node);
 
         static AVLNode *fix(AVLNode* node);
@@ -32,6 +26,14 @@ namespace MRD{
         static uint32_t h(const AVLNode* node);
 
         static uint32_t cnt(const AVLNode* node);
+
+        static AVLNode *successor(AVLNode * node);
+
+        static AVLNode *predscessor(AVLNode * node);
+
+        static int64_t rank(AVLNode *node);
+
+        static AVLNode *offset(AVLNode *node, int64_t offset);
     protected:
 
         static AVLNode *rot_left(AVLNode *node);
@@ -44,7 +46,6 @@ namespace MRD{
 
         static AVLNode *del_easy(AVLNode *node);
     };
-
 }
 
 

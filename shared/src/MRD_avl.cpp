@@ -4,6 +4,17 @@
 
 #include "MRD_avl.h"
 
+MRD::AVLNode::AVLNode() {
+    left = right = parent = nullptr;
+    height = 1;
+    count = 1;
+}
+
+void MRD::AVLNode::update() {
+    height = std::max(h(left), h(right)) + 1;
+    count = 1 + cnt(left) + cnt(right);
+}
+
 MRD::AVLNode * MRD::AVLNode::del(AVLNode *node) {
     if (!node->left || !node->right) {
         return del_easy(node);
@@ -57,6 +68,79 @@ uint32_t MRD::AVLNode::h(const AVLNode *node) {
 
 uint32_t MRD::AVLNode::cnt(const AVLNode *node) {
     return node ? node->count : 0;
+}
+
+MRD::AVLNode * MRD::AVLNode::successor(AVLNode *node) {
+    if (node->right) {
+        node = node->right;
+        while (node->left) {
+            node = node->left;
+        }
+        return node;
+    }
+    while (AVLNode *parent = node->parent) {
+        if (node == parent->left) {
+            return parent;
+        }
+        node = parent;
+    }
+    return nullptr;
+}
+
+MRD::AVLNode * MRD::AVLNode::predscessor(AVLNode *node) {
+    if (node->left) {
+        node = node->left;
+        while (node->right) {
+            node = node->right;
+        }
+        return node;
+    }
+    while (AVLNode *parent = node->parent) {
+        if (node == parent->right) {
+            return parent;
+        }
+        node = parent;
+    }
+    return nullptr;
+}
+
+int64_t MRD::AVLNode::rank(AVLNode *node) {
+    int64_t rank = 0;
+    if (node->left) {
+        rank += AVLNode::cnt(node->left);
+    }
+    AVLNode* parent = node->parent;
+    if (parent && parent->right == node) {
+        rank += AVLNode::cnt(parent->left) + 1;
+    }
+    return rank;
+}
+
+MRD::AVLNode * MRD::AVLNode::offset(AVLNode *node, int64_t offset) {
+    int64_t pos =  0;
+    while (pos != offset) {
+        if (pos < offset && pos + AVLNode::cnt(node->right) >= offset) {
+            node = node->right;
+            pos += AVLNode::cnt(node->left) + 1;
+        }
+        else if (pos > offset && pos - AVLNode::cnt(node->left) <= offset) {
+            node = node->left;
+            pos -= AVLNode::cnt(node->right) + 1;
+        }
+        else {
+            AVLNode *parent = node->parent;
+            if (!parent)
+                return nullptr;
+            if (parent->right == node) {
+                pos -= AVLNode::cnt(node->left) + 1;
+            }
+            else {
+                pos += AVLNode::cnt(node->right) + 1;
+            }
+            node = parent;
+        }
+    }
+    return node;
 }
 
 MRD::AVLNode * MRD::AVLNode::rot_left(AVLNode *node) {
