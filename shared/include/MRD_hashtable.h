@@ -20,7 +20,7 @@ namespace MRD{
     };
     // a simple fixed-sized hashtable
     struct HTab {
-        HNode** tab; // array of slots
+        HNode** tab = nullptr; // array of slots
         size_t mask = 0;    // power of 2 array size, 2^n - 1
         size_t size = 0;    // number of keys
 
@@ -54,6 +54,11 @@ namespace MRD{
         HTab newer;
         HTab older;
         size_t migrate_pos = 0;
+    };
+    struct HKey {
+        HNode node;
+        const char *name = nullptr;
+        size_t len = 0;
     };
 }
 
