@@ -8,6 +8,10 @@
 #include <cstring>
 #include <vector>
 
+#ifndef DBL_SIZE
+#define DBL_SIZE sizeof(double)
+#endif
+
 namespace MRD {
     struct Buffer {
     public:
@@ -67,8 +71,14 @@ namespace MRD {
         void append_u32(const uint32_t val) {
             append(reinterpret_cast<const uint8_t*>(&val), 4);
         }
+        void append_u64(const uint64_t val) {
+            append(reinterpret_cast<const uint8_t*>(&val), 8);
+        }
         void append_i64(const int64_t val) {
             append(reinterpret_cast<const uint8_t*>(&val), 8);
+        }
+        void append_dbl(const double val) {
+            append(reinterpret_cast<const uint8_t*>(&val), DBL_SIZE);
         }
 
         void resize(size_t size) {

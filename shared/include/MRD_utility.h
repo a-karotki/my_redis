@@ -1,19 +1,19 @@
 #ifndef MRD_UTILITY_H
 #define MRD_UTILITY_H
 
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <errno.h>
+#include <cstdint>
+#include <cstring>
+#include <cstdio>
+#include <cerrno>
 #include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/ip.h>
 #include <vector>
-#include <assert.h>
+#include <cassert>
 #include <string>
-#include "Buffer.h"
+#include "MRD_buffer.h"
+#ifndef DBL_SIZE
+#define DBL_SIZE sizeof(double)
+#endif
+
 namespace MRD{
     enum uint_8t {
         TAG_NIL = 0,    // nil
@@ -42,9 +42,23 @@ namespace MRD{
         out.append_i64(val);
         return 1 + 8;
     }
+    static uint32_t out_dbl(Buffer &out, double val) {
+        out.append_u8(TAG_DBL);
+        out.append_dbl(val);
+        return 1 + DBL_SIZE;
+    }
     static uint32_t out_arr(Buffer &out, uint32_t n) {
         out.append_u8(TAG_ARR);
         out.append_u32(n);
+        return 1 + 4;
+    }
+    static uint32_t out_begin_arr(Buffer &out) {
+        return out_arr(out, 0) - 1; //bytes written without tag
+    }
+    // ctx - n size, returns the size of arr TAG + len bytes
+    static uint32_t out_end_arr(Buffer &out, uint32_t ctx, uint32_t n) {
+        assert(*(out.data_end - n - ctx) == TAG_ARR);
+        memcpy(out.data_end - n - ctx, &n, 4);
         return 1 + 4;
     }
     static uint32_t out_err(Buffer &out, const std::string& msg) {

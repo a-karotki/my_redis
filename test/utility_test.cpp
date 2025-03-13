@@ -3,7 +3,7 @@
 //
 #include <gtest/gtest.h>
 #include "MRD_utility.h"
-#include "Buffer.h"
+#include "MRD_buffer.h"
 
 using namespace MRD;
 

@@ -1,7 +1,7 @@
 //
 // Created by korot on 06/03/2025.
 //
-#include "Buffer.h"
+#include "MRD_buffer.h"
 #include <gtest/gtest.h>
 using namespace MRD;
 

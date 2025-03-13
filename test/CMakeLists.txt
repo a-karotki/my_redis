@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 project(MRD)
 
 # GoogleTest requires at least C++14
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
@@ -32,6 +32,10 @@ add_executable(
         avl_test
         avl_test.cpp
 )
+add_executable(
+        zset_test
+        zset_test.cpp
+)
 target_link_libraries(
         hashmap_test
         PRIVATE
@@ -54,6 +58,12 @@ target_link_libraries(
         GTest::gtest_main
         MRD_shared_avl
 )
+target_link_libraries(
+        zset_test
+        PRIVATE
+        GTest::gtest_main
+        MRD_shared_zset
+)
 target_include_directories(
         utility_test
         PRIVATE
@@ -70,8 +80,14 @@ target_include_directories(
         PRIVATE
         ${MRD_shared_include_dir}
 )
+target_include_directories(
+        zset_test
+        PRIVATE
+        ${MRD_shared_include_dir}
+)
 include(GoogleTest)
 gtest_discover_tests(hashmap_test)
 gtest_discover_tests(buffer_test)
 gtest_discover_tests(utility_test)
 gtest_discover_tests(avl_test)
+gtest_discover_tests(zset_test)

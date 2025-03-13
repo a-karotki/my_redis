@@ -7,7 +7,7 @@
 #include "MRD_hashtable.h"
 
 // #include <bits/unordered_map.h>
-#include "Buffer.h"
+#include "MRD_buffer.h"
 using namespace MRD;
 
 void HTab::init(size_t n) {
