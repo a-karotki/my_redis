@@ -26,7 +26,7 @@ static bool entry_eq(HNode &lhs, HNode &rhs) {
 HashMap map;
 TEST(HashmapTest, EmptyLookup) {LookupKey lk;
     lk.key = "Hello";
-    lk.node.hcode = str_hash(reinterpret_cast<uint8_t*>(lk.key.data()), lk.key.length());
+    lk.node.hcode = str_hash(lk.key.data(), lk.key.length());
     HNode* node = map.lookup(lk.node, key_eq);
     ASSERT_EQ(node, nullptr);
 }
@@ -34,11 +34,11 @@ TEST(HashmapTest, Insertion) {
     auto *e = new Entry();
     e->key = "Hello";
     e->val = "World";
-    e->node.hcode = str_hash(reinterpret_cast<uint8_t*>(e->key.data()), e->key.length());
+    e->node.hcode = str_hash(e->key.data(), e->key.length());
     map.insert(&e->node);
     LookupKey lk;
     lk.key = "Hello";
-    lk.node.hcode = str_hash(reinterpret_cast<uint8_t*>(lk.key.data()), lk.key.length());
+    lk.node.hcode = str_hash(lk.key.data(), lk.key.length());
     HNode* node = map.lookup(lk.node, key_eq);
     const std::string &val = container_of(node, Entry, node)->val;
     ASSERT_EQ(val, "World");
@@ -49,11 +49,11 @@ TEST(HashmapTest, Erasing) {
     auto *e = new Entry();
     e->key = "Hello";
     e->val = "World";
-    e->node.hcode = str_hash(reinterpret_cast<uint8_t*>(e->key.data()), e->key.length());
+    e->node.hcode = str_hash(e->key.data(), e->key.length());
     map.insert(&e->node);
     LookupKey lk;
     lk.key = "Hello";
-    lk.node.hcode = str_hash(reinterpret_cast<uint8_t*>(lk.key.data()), lk.key.length());
+    lk.node.hcode = str_hash(lk.key.data(), lk.key.length());
     HNode* node = map.erase(lk.node, key_eq);
     const std::string &val = container_of(node, Entry, node)->val;
     ASSERT_EQ(val, "World");
@@ -95,13 +95,13 @@ TEST(HashmapTest, ResizingBehaviour) {
         auto e = new Entry();
         e->key = std::to_string(i);
         e->val = std::to_string(-i);
-        e->node.hcode = str_hash(reinterpret_cast<uint8_t*>(e->key.data()), e->key.length());
+        e->node.hcode = str_hash(e->key.data(), e->key.length());
         map.insert(&e->node);
     }
     LookupKey lk;
     for (int i = 999; i > -1; --i) {
         lk.key = std::to_string(i);
-        lk.node.hcode = str_hash(reinterpret_cast<uint8_t*>(lk.key.data()), lk.key.length());
+        lk.node.hcode = str_hash(lk.key.data(), lk.key.length());
         HNode* node = map.erase(lk.node, key_eq);
         const std::string& val = container_of(node, Entry, node)->val;
         EXPECT_EQ(val, std::to_string(-i));
@@ -114,13 +114,13 @@ TEST(HashmapTest, ResizingLarger) {
         auto e = new Entry();
         e->key = std::to_string(i);
         e->val = std::to_string(-i);
-        e->node.hcode = str_hash(reinterpret_cast<uint8_t*>(e->key.data()), e->key.length());
+        e->node.hcode = str_hash(e->key.data(), e->key.length());
         map.insert(&e->node);
     }
     LookupKey lk;
     for (int i = 100000; i > -1; --i) {
         lk.key = std::to_string(i);
-        lk.node.hcode = str_hash(reinterpret_cast<uint8_t*>(lk.key.data()), lk.key.length());
+        lk.node.hcode = str_hash(lk.key.data(), lk.key.length());
         HNode* node = map.erase(lk.node, key_eq);
         const std::string& val = container_of(node, Entry, node)->val;
         EXPECT_EQ(val, std::to_string(-i));
@@ -133,14 +133,14 @@ TEST(HashmapTest, SizeCorectness) {
         auto e = new Entry();
         e->key = std::to_string(i);
         e->val = std::to_string(i);
-        e->node.hcode = str_hash(reinterpret_cast<uint8_t*>(e->key.data()), e->key.length());
+        e->node.hcode = str_hash(e->key.data(), e->key.length());
         map.insert(&e->node);
     }
     LookupKey lk;
     EXPECT_EQ(map.size(), 100);
     for (int i = 0; i < 100; ++i) {
         lk.key = std::to_string(i);
-        lk.node.hcode = str_hash(reinterpret_cast<uint8_t*>(lk.key.data()), lk.key.length());
+        lk.node.hcode = str_hash(lk.key.data(), lk.key.length());
         HNode* node = map.erase(lk.node, key_eq);
         const std::string& val = container_of(node, Entry, node)->val;
         EXPECT_EQ(val, std::to_string(i));
@@ -160,10 +160,12 @@ static uint8_t get_tag(const uint8_t* ptr) {
     return *ptr;
 }
 static uint32_t get_len(const uint8_t* tag_ptr) {
-    return *(reinterpret_cast<const uint32_t*>(tag_ptr + 1));
+    uint32_t res;
+    memcpy(&res, tag_ptr + 1, 4);
+    return res;
 }
 static std::string get_str(const uint8_t* tag_ptr, size_t n) {
-    auto *str_ptr = reinterpret_cast<const char*>(tag_ptr + 5);
+    auto *str_ptr = reinterpret_cast<const char*>(tag_ptr + 5); //not UB
     return std::string{str_ptr, n};
 }
 TEST(HashmapTest, Foreach) {
@@ -172,7 +174,7 @@ TEST(HashmapTest, Foreach) {
         auto e = new Entry();
         e->key = std::to_string(i);
         e->val = std::to_string(i);
-        e->node.hcode = str_hash(reinterpret_cast<uint8_t*>(e->key.data()), e->key.length());
+        e->node.hcode = str_hash(e->key.data(), e->key.length());
         map.insert(&e->node);
         s1.insert(std::to_string(i));
     }

@@ -7,7 +7,7 @@ using namespace MRD;
 
 ZNode::ZNode(const char *name_, size_t len_, double score_) : name(len_, '\0') {
     h_node.next = nullptr;
-    h_node.hcode = str_hash(reinterpret_cast<const uint8_t *>(name_), len_);
+    h_node.hcode = str_hash(name_, len_);
     score = score_;
     len = len_;
     memcpy(name.data(), name_, len);
@@ -22,7 +22,7 @@ ZNode *ZSet::lookup(const char *name, size_t len) const {
     if (!root)
         return nullptr;
     HKey key;
-    key.node.hcode = str_hash(reinterpret_cast<const uint8_t *>(name), len);
+    key.node.hcode = str_hash(name, len);
     key.name = name;
     key.len = len;
     HNode *found = hmap.lookup(key.node, hcmp);
@@ -31,7 +31,7 @@ ZNode *ZSet::lookup(const char *name, size_t len) const {
 
 void ZSet::del(ZNode *node) {
     HKey key;
-    key.node.hcode = str_hash(reinterpret_cast<const uint8_t *>(node->name.data()), node->len);
+    key.node.hcode = str_hash(node->name.data(), node->len);
     key.name = node->name.data();
     key.len = node->len;
     HNode *found = hmap.erase(key.node, hcmp);

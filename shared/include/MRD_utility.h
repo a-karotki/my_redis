@@ -31,7 +31,9 @@ namespace MRD{
     static uint32_t out_str(Buffer &out, const char* s, size_t size) {
         out.append_u8(TAG_STR);
         out.append_u32(size);
-        out.append(reinterpret_cast<const uint8_t *>(s), size);
+        uint8_t interpreted[size];
+        memcpy(interpreted, s, size);
+        out.append(interpreted, size);
         return 1 + 4 + size;
     }
     static uint32_t out_str(Buffer& out, const std::string& s) {
@@ -64,7 +66,9 @@ namespace MRD{
     static uint32_t out_err(Buffer &out, const std::string& msg) {
         out.append_u8(TAG_ERR);
         out.append_u32(msg.length());
-        out.append(reinterpret_cast<const uint8_t *>(msg.data()), msg.length());
+        uint8_t interpreted[msg.length()];
+        memcpy(interpreted, msg.data(), msg.length());
+        out.append(interpreted, msg.length());
         return 1 + 4 + msg.length();
     }
 
@@ -130,7 +134,7 @@ namespace MRD{
         return 0;
     }
     static int32_t write_all(const int fd, const Buffer& buf) {
-        const auto p = reinterpret_cast<const char *>(buf.data_begin);
+        const auto p = reinterpret_cast<const char *>(buf.data_begin); //not UB
         write_all(fd, p, buf.data_length);
     }
     static void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len) {
@@ -146,6 +150,11 @@ namespace MRD{
             h = (h + data[i]) * 0x01000193;
         }
         return h;
+    }
+    static uint64_t str_hash(const char* data, size_t len) {
+        uint8_t interpreted[len];
+        memcpy(interpreted, data, len);
+        return str_hash(interpreted, len);
     }
 }
 

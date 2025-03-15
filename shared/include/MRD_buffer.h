@@ -69,16 +69,24 @@ namespace MRD {
             append(&val, 1);
         }
         void append_u32(const uint32_t val) {
-            append(reinterpret_cast<const uint8_t*>(&val), 4);
+            uint8_t interpreted[4];
+            memcpy(interpreted, &val, 4);
+            append(interpreted, 4);
         }
         void append_u64(const uint64_t val) {
-            append(reinterpret_cast<const uint8_t*>(&val), 8);
+            uint8_t interpreted[8];
+            memcpy(interpreted, &val, 8);
+            append(interpreted, 8);
         }
         void append_i64(const int64_t val) {
-            append(reinterpret_cast<const uint8_t*>(&val), 8);
+            uint8_t interpreted[8];
+            memcpy(interpreted, &val, 8);
+            append(interpreted, 8);
         }
         void append_dbl(const double val) {
-            append(reinterpret_cast<const uint8_t*>(&val), DBL_SIZE);
+            uint8_t interpreted[DBL_SIZE];
+            memcpy(interpreted, &val, DBL_SIZE);
+            append(interpreted, DBL_SIZE);
         }
 
         void resize(size_t size) {

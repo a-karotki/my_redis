@@ -17,14 +17,18 @@ protected:
         return *ptr;
     }
     static uint32_t get_len(const uint8_t* tag_ptr) {
-        return *(reinterpret_cast<const uint32_t*>(tag_ptr + 1));
+        uint32_t res;
+        memcpy(&res, tag_ptr + 1, 4);
+        return res;
     }
     static std::string get_str(const uint8_t* tag_ptr, size_t n) {
-        auto *str_ptr = reinterpret_cast<const char*>(tag_ptr + 5);
+        auto *str_ptr = reinterpret_cast<const char*>(tag_ptr + 5); //not UB
         return std::string{str_ptr, n};
     }
     static uint64_t get_int(const uint8_t* tag_ptr) {
-        return *(reinterpret_cast<const uint64_t*>(tag_ptr + 1));
+        uint64_t res;
+        memcpy(&res, tag_ptr + 1, 8);
+        return res;
     }
     Buffer* b1;
 };
