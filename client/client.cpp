@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <iostream>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -16,7 +17,8 @@ namespace MRD {
         uint32_t len = 0;
         Buffer b{};
         b.append_u32(len);
-        len += out_arr(b, cmd.size());
+        b.append_u32(cmd.size());
+        len += 4;
         for (const std::string& s: cmd) {
             len += out_str(b, s);
         }
@@ -34,22 +36,22 @@ namespace MRD {
     switch (data[0]) {
     case TAG_NIL:
         printf("(nil)\n");
-        return 1;
+        return 0;
     case TAG_ERR:
-        if (size < 1 + 8) {
-            msg("bad response");
-            return -1;
-        }
         {
-            int32_t code = 0;
-            uint32_t len = 0;
-            memcpy(&code, &data[1], 4);
-            memcpy(&len, &data[1 + 4], 4);
-            if (size < 1 + 8 + len) {
+            if (size < 6) {
                 msg("bad response");
                 return -1;
             }
-            printf("(err) %d %.*s\n", code, len, &data[1 + 8]);
+            uint_8t code;
+            uint32_t len = 0;
+            memcpy(&code, &data[1], 1);
+            memcpy(&len, &data[2], 4);
+            if (size < 1 + 1 + 4 + len) {
+                msg("bad response");
+                return -1;
+            }
+            std::cout << "(err) " << get_err(code) << " msg_len = " << len << ' ' << std::string_view(reinterpret_cast<const char*>(&data[6]), len) << std::endl;
             return 1 + 8 + len;
         }
     case TAG_STR:
@@ -64,7 +66,7 @@ namespace MRD {
                 msg("bad response");
                 return -1;
             }
-            printf("(str) %.*s\n", len, &data[1 + 4]);
+            std::cout << "(str) " << len << ' ' << std::string_view(reinterpret_cast<const char*>(&data[5]), len) << std::endl;
             return 1 + 4 + len;
         }
     case TAG_INT:
@@ -75,7 +77,7 @@ namespace MRD {
         {
             int64_t val = 0;
             memcpy(&val, &data[1], 8);
-            printf("(int) %ld\n", val);
+            std::cout << "(int) " << val << std::endl;
             return 1 + 8;
         }
     case TAG_DBL:
@@ -86,7 +88,7 @@ namespace MRD {
         {
             double val = 0;
             memcpy(&val, &data[1], 8);
-            printf("(dbl) %g\n", val);
+            std::cout << "(dbl) "  << val << std::endl;
             return 1 + 8;
         }
     case TAG_ARR:
@@ -97,7 +99,7 @@ namespace MRD {
         {
             uint32_t len = 0;
             memcpy(&len, &data[1], 4);
-            printf("(arr) len=%u\n", len);
+            std::cout << "(arr) len=" << len << std::endl;
             size_t arr_bytes = 1 + 4;
             for (uint32_t i = 0; i < len; ++i) {
                 int32_t rv = print_response(&data[arr_bytes], size - arr_bytes);
@@ -106,7 +108,7 @@ namespace MRD {
                 }
                 arr_bytes += (size_t)rv;
             }
-            printf("(arr) end\n");
+            std::cout << "(arr) end" << std::endl;
             return (int32_t)arr_bytes;
         }
     default:
@@ -144,14 +146,14 @@ namespace MRD {
 
         // print the result
         int32_t rv = print_response((uint8_t *)&rbuf[4], len);
-        if (rv > 0 && (uint32_t)rv != len) {
+        /*if (rv > 0 && (uint32_t)rv != len) {
             msg("bad response");
             rv = -1;
-        }
+        }*/
         return rv;
     }
 
-    int main(int argc, char **argv) {
+    int main() {
         int fd = socket(AF_INET, SOCK_STREAM, 0);
         if (fd < 0) {
             die("socket()");
@@ -162,29 +164,43 @@ namespace MRD {
         addr.sin_port = ntohs(1234);
         addr.sin_addr.s_addr = ntohl(INADDR_LOOPBACK);  // 127.0.0.1
         int rv = connect(fd, (const struct sockaddr *)&addr, sizeof(addr));
-        // if (rv) {
-        //     die("connect");
-        // }
+        if (rv) {
+            die("connect");
+        }
+        while (true) {
+            std::string str;
+            std::vector<std::string> cmd{};
+            std::getline(std::cin, str, '\n');
+            size_t pos = 0;
+            if (str == "EXIT")
+                break;
+            while ((pos = str.find(' ')) != std::string::npos) {
+                std::string token = str.substr(0, pos);
+                if (token == " ")
+                    continue;
+                cmd.push_back(token);
+                str.erase(0, pos + 1);
+            }
+            if (!str.empty())
+                cmd.push_back(str);
+            std::cout << "Sending: ";
+            for (auto& str1: cmd) {
+                std::cout << str1 << ' ';
+            }
+            std::cout << std::endl;
+            int32_t err = send_req(fd, cmd);
+            // int32_t err = 1;
+            if (err) {
+                std::cout << "server closed the connection" << std::endl;
+                break;
+            }
+            err = read_res(fd);
+        }
 
-        std::vector<std::string> cmd{};
-        for (int i = 1; i < argc; ++i) {
-            cmd.push_back(argv[i]);
-        }
-        int32_t err = send_req(fd, cmd);
-        // int32_t err = 1;
-        if (err) {
-            goto L_DONE;
-        }
-        err = read_res(fd);
-        if (err) {
-            goto L_DONE;
-        }
-
-        L_DONE:
-            close(fd);
+        close(fd);
         return 0;
     }
 }
-int main(int argc, char **argv) {
-    MRD::main(argc, argv);
+int main() {
+    MRD::main();
 }

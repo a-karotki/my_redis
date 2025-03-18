@@ -44,6 +44,7 @@ namespace MRD{
 
     class HashMap {
     public:
+        HashMap() : newer(), older(){}
         HNode *erase(HNode& key, bool (&eq)(HNode&, HNode&));
         void   clear();
         size_t size() const;

@@ -5,18 +5,51 @@
 #ifndef MRD_SERVER_H
 #define MRD_SERVER_H
 
+#define MAX_CMDS 7
+
 #include <map>
+#include <variant>
 #include <vector>
 #include "MRD_buffer.h"
 #include "MRD_hashtable.h"
 #include "MRD_utility.h"
-#include <>
+#include "MRD_zset.h"
 namespace MRD {
 
-    struct Entry{
-        HNode node;
+    enum uin32_t{
+        E_INIT = 0,
+        E_STR = 1,
+        E_SET = 2,
+    };
+    struct Entry {
+        struct HNode node;  // hashtable node
         std::string key;
-        std::string val;
+        uint32_t type = 0;
+        std::variant<
+            std::string, //KV value
+            ZSet//set
+        > val;
+    public:
+        static Entry* EntryKV(const std::string& name , const std::string& val_) {
+            auto* res = new Entry(name, E_STR);
+            res->val = std::string(val_);
+            return res;
+        }
+        static Entry* EntryS(const std::string& name) {
+            auto *e = new Entry(name, E_SET);
+            return e;
+        }
+    private:
+        Entry(const std::string& name ,uint32_t type) : node{nullptr, str_hash(name)} {
+            key = name;
+            this->type = type;
+            if (type == E_STR) {
+                val = std::string();
+            }
+            if (type == E_SET) {
+                val.emplace<ZSet>();
+            }
+        }
     };
     struct LookupKey {  // for lookup only
         HNode node;
@@ -47,19 +80,25 @@ namespace MRD {
 
     class Server {
     public:
-        struct Response {
-            //Response status
-            enum {
-                RESP_OK = 0,
-                RESP_ERR = 1,
-                RESP_NX = 2, // key not found
-            };
-            uint32_t status = RESP_OK;
-            std::vector<uint8_t> data;
-        };
+        // struct Response {
+        //     //Response status
+        //     enum {
+        //         RESP_OK = 0,
+        //         RESP_ERR = 1,
+        //         RESP_NX = 2, // key not found
+        //     };
+        //     uint32_t status = RESP_OK;
+        //     std::vector<uint8_t> data;
+        // };
 
         static void init();
 
+        /*
+         * Expects to receive data in format:
+         *  (uint32_t)data_length (uint32_t)word_count (uint8_t)TAG_STR (uint32_t)str_len (uint8_t*)string
+         * Responds in format:
+         *  (uint32_t)data_length (uint8_t)TAG (type)val_matching_the_tag
+         */
         static int main_loop();
 
     private:
@@ -69,6 +108,7 @@ namespace MRD {
 
         // static std::map<std::string, std::string> g_data;
 
+        //NOTE: handles only string tag
         static int32_t parse_req(const uint8_t *&data, size_t size, std::vector<std::string> &out);
 
         static size_t do_request(std::vector<std::string> &cmd, Buffer &out);
@@ -83,9 +123,31 @@ namespace MRD {
 
         static void handle_read(Conn *conn);
 
+        static Entry *data_lookup(std::string &name);
+
+        static ZSet *expect_zset(Entry *entry);
+        //GET key
         static uint32_t do_get(std::vector<std::string> &cmd, Buffer &out);
+        //SET key val
         static uint32_t do_set(std::vector<std::string> &cmd, Buffer &out);
+        //DEL key
         static uint32_t do_del(std::vector<std::string> &cmd, Buffer &out);
+        //ZADD key score name
+        static uint32_t do_zadd(std::vector<std::string> &cmd, Buffer &out);
+        //ZREM key name
+        static uint32_t do_zrem(std::vector<std::string> &cmd, Buffer &out);
+
+        //ZQUERYGE key score name offset limit
+        static uint32_t do_zqueryge(std::vector<std::string> &cmd, Buffer &out);
+
+        //ZQYERYLE key score name offset limit
+        static uint32_t do_zqueryle(std::vector<std::string> &cmd, Buffer &out);
+
+        //ZRANK key name
+        static uint32_t do_zrank(std::vector<std::string> &cmd, Buffer &out);
+
+        //ZCOUNT key min_score max_score
+        static uint32_t do_zcount(std::vector<std::string> &cmd, Buffer &out);
     };
 }
 #endif //MRD_SERVER_H

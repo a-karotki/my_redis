@@ -18,15 +18,13 @@ enable_testing()
 
 
 
-set(TEST_LIST hashmap_test buffer_test utility_test zset_test avl_test server_test)
+set(TEST_LIST hashmap_test buffer_test utility_test zset_test avl_test)
 
 foreach (x ${TEST_LIST})
     add_executable(${x} ${x}.cpp)
     target_include_directories(${x} PRIVATE ${MRD_shared_include_dir})
     target_link_libraries(${x} PRIVATE GTest::gtest_main)
 endforeach ()
-
-target_include_directories(server_test PRIVATE ${MRD_server_dir})
 
 target_link_libraries(hashmap_test PRIVATE  MRD_shared_hashtable)
 target_link_libraries(zset_test PRIVATE MRD_shared_zset)

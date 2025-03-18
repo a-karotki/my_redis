@@ -23,7 +23,7 @@ namespace MRD {
         AVLNode *root = nullptr;
         HashMap hmap;
 
-        ZSet() = default; //zombie
+        ZSet() : hmap(){}; //zombie
         ~ZSet();
         ZSet(const ZSet & rhs);
         ZSet(ZSet && other) noexcept;

@@ -49,18 +49,16 @@ int32_t Server::parse_req(const uint8_t *&data, size_t size, std::vector<std::st
     const auto *end = data + size;
     uint8_t tag = -1;
     uint32_t nstr = 0;
-    if (!read_u8(data, end, tag) || tag != TAG_ARR)
-        return -1;
     if (!read_u32(data, end, nstr)) {
         return -1;
     }
-    if (nstr > MAX_MSG) {
+    if (nstr > MAX_CMDS) {
         return -1;
     }
     while (out.size() < nstr) {
         uint32_t len = 0;
         uint8_t tag = -1;
-        if (!read_u8(data,end, tag)) {
+        if (!read_u8(data,end, tag) || tag != TAG_STR) {
             return -1;
         }
         if (!read_u32(data, end, len)) {
@@ -81,15 +79,37 @@ int32_t Server::parse_req(const uint8_t *&data, size_t size, std::vector<std::st
 HashMap Server::g_data;
 
 size_t Server::do_request(std::vector<std::string> &cmd, Buffer &out) {
-    if (cmd.size() == 2 && cmd[0] == "get") {
+    for (auto& x : cmd[0])
+        x = static_cast<char>(toupper(x));
+
+    if (cmd.size() == 2 && cmd[0] == "GET") {
         return do_get(cmd, out);
     }
-    if (cmd.size() == 3 && cmd[0] == "set") {
+    if (cmd.size() == 3 && cmd[0] == "SET") {
         return do_set(cmd, out);
     }
-    if (cmd.size() == 2 && cmd[0] == "del") {
+    if (cmd.size() == 2 && cmd[0] == "DEL") {
         return do_del(cmd, out);
-    }       // unrecognized command
+    }
+    if (cmd.size() == 4 && cmd[0] == "ZADD") {
+        return do_zadd(cmd, out);
+    }
+    if (cmd.size() == 3 && cmd[0] == "ZREM") {
+        return do_zrem(cmd, out);
+    }
+    if (cmd.size() == 6 && cmd[0] == "ZQUERYGE") {
+        return do_zqueryge(cmd, out);
+    }
+    if (cmd.size() == 6 && cmd[0] == "ZQUERYLE") {
+        return do_zqueryle(cmd, out);
+    }
+    if (cmd.size() == 4 && cmd[0] == "ZCOUNT") {
+        return do_zcount(cmd, out);
+    }
+    if (cmd.size() == 3 && cmd[0] == "ZRANK") {
+        return do_zrank(cmd, out);
+    }
+    return out_err(out, ERR_NOT_FOUND, "command not found");
     return 0;
 }
 void Server::response_begin(Buffer& out) {
@@ -98,11 +118,20 @@ void Server::response_begin(Buffer& out) {
 
 void Server::response_end(Buffer& out, const uint32_t rv) {
     if (rv > MAX_MSG) {
-        out_err(out, "response is too long");
+        out.consume(out.data_length);
+        out.append_u32(0);
+        uint32_t val = out_err(out, ERR_OUT_OF_RANGE, "response is too long");
+        auto ptr = out.data_end - val - 4;
+        memcpy(ptr, &val, 4);
     }
     auto len_ptr = out.data_end - rv - 4;
-    if (len_ptr < out.data_begin )
-        out_err(out, "unexpected error in error");
+    if (len_ptr < out.data_begin ) {
+        out.consume(out.data_length);
+        out.append_u32(0);
+        uint32_t val = out_err(out, ERR_UNEXPECTED, "unexpected error in error");
+        auto ptr = out.data_end - val - 4;
+        memcpy(ptr, &val, 4);
+    }
     memcpy(len_ptr, &rv, 4);
 }
 
@@ -174,6 +203,23 @@ void Server::handle_read(Conn* conn) {
         conn->want_write = true;
         return handle_write(conn);
     }
+}
+// throws std::invalid_argument if object wasn't found
+// throws std::runtime_error if found Entry is of a wrong type
+Entry *Server::data_lookup(std::string &name) {
+    LookupKey key;
+    key.key = name;
+    key.node.hcode = str_hash(key.key.data(), key.key.size());
+    HNode *found = g_data.lookup(key.node, key_eq);
+    return found ? container_of(found, Entry, node) : nullptr;
+}
+
+ZSet *Server::expect_zset(Entry *entry) {
+    if (!entry)
+        return nullptr;
+    if (entry->type != E_SET)
+        return nullptr;
+    return &std::get<ZSet>(entry->val);
 }
 
 int Server::main_loop() {
@@ -258,54 +304,210 @@ void Server::init() {
         die("listen()");
     }
 }
-
+//get key
 uint32_t Server::do_get(std::vector<std::string> &cmd, Buffer &out) {
-    LookupKey key;
-    key.key.swap(cmd[1]);
-    key.node.hcode = str_hash( reinterpret_cast<uint8_t *>(key.key.data()), key.key.size());
-    //hashtable lookup
-    HNode *node = g_data.lookup(key.node, key_eq);
-    if (!node) {
-        return out_err(out, "do_get");;
-    }
-    const std::string &val = container_of(node, Entry, node)->val;
+    const Entry* entry = data_lookup(cmd[1]);
+    if (!entry)
+        return out_err(out, ERR_NOT_FOUND, "get");
+    if (entry->type != E_STR)
+        return out_err(out, ERR_BAD_TYPE, "get: expected KV-pair");
+    const auto& val = std::get<std::string>(entry->val);
     assert(val.size() <= MAX_MSG);
     return out_str(out, val.data(), val.length());
 }
-
+//set key val
 uint32_t Server::do_set(std::vector<std::string> &cmd, Buffer &out) {
-    LookupKey key;
-    key.key.swap(cmd[1]);
-    key.node.hcode = str_hash( reinterpret_cast<uint8_t *>(key.key.data()), key.key.size());
-    //hashtable lookup
-    HNode *node = g_data.lookup(key.node, key_eq);
-    if (node) {
-        container_of(node, Entry, node)->val.swap(cmd[2]);
+    Entry* entry = data_lookup(cmd[1]);
+    if (entry){
+        if (entry->type != E_STR)
+            return out_err(out, ERR_BAD_TYPE, "set: wrong data type, expected KV-pair");
+        entry->val = cmd[2];
     }
     else {
-        Entry *entry = new Entry();
-        entry->key.swap(key.key);
-        entry->node.hcode = key.node.hcode;
-        entry->val.swap(cmd[2]);
-        g_data.insert(&entry->node);
+        Entry *e = Entry::EntryKV(cmd[1], cmd[2]);
+        g_data.insert(&e->node);
     }
     return out_nil(out);
 }
-
+//del key
 uint32_t Server::do_del(std::vector<std::string> &cmd, Buffer &out) {
     LookupKey key;
-    key.key.swap(cmd[1]);
-    key.node.hcode = str_hash( reinterpret_cast<uint8_t *>(key.key.data()), key.key.size());
-    //hashtable lookup
-    HNode *node = g_data.erase(key.node, key_eq);
-    if (node) { // deallocate the pair
-        delete container_of(node, Entry, node);
+    key.key = cmd[1];
+    key.node.hcode = str_hash(key.key.data(), key.key.size());
+    HNode *found = g_data.erase(key.node, key_eq);
+    if (found) {
+        // deallocate the pair
+        Entry *e = container_of(found, Entry, node);
+        delete e;
+        return out_int(out, 1); //number of removed elements
     }
-    return out_int(out, node ? 1 : 0); //number of removed elements
+    return out_err(out,ERR_NOT_FOUND, "del: given key does not exist");
+}
+//zadd key score name
+uint32_t Server::do_zadd(std::vector<std::string> &cmd, Buffer &out) {
+    Entry *e = data_lookup(cmd[1]);
+    double score;
+    std::string name;
+    try {
+        score = std::stod(cmd[2]);
+        name = cmd[3];
+    }
+    catch (std::invalid_argument& exc) {
+        return out_err(out, ERR_BAD_TYPE, exc.what());
+    }
+    catch (std::exception& exc) {
+        return out_err(out, ERR_UNEXPECTED, exc.what());
+    }
+    if (!e) {
+        Entry *entry = Entry::EntryS(cmd[1]);
+        g_data.insert(&entry->node);
+        std::get<ZSet>(entry->val).insert(name.data(), name.length(), score);
+        return out_nil(out);
+    }
+    else {
+        if (e->type != E_SET)
+            return out_err(out, ERR_BAD_TYPE, "zadd: expexcted set Entry");
+        std::get<ZSet>(e->val).insert(name.data(), name.length(), score);
+        return out_nil(out);
+    }
+}
+//zrem key name
+uint32_t Server::do_zrem(std::vector<std::string> &cmd, Buffer &out) {
+    Entry *e = data_lookup(cmd[1]);
+    if (!e) {
+        return out_err(out, ERR_NOT_FOUND, "zrem");
+    }
+    if (e->type != E_SET) {
+        return out_err(out, ERR_BAD_TYPE, "zrem");
+    }
+    ZSet &zset = std::get<ZSet>(e->val);
+    zset.rem(cmd[2]);
+    return out_int(out, 1); //number of remove elements
 }
 
+//TODO: move inside ZSet class
+//zqueryge key score name offset limit
+uint32_t Server::do_zqueryge(std::vector<std::string> &cmd, Buffer &out) {
+    Entry *e = data_lookup(cmd[1]);
+    if (!e) {
+        return out_err(out, ERR_NOT_FOUND, "zqueryge");
+    }
+    if (e->type != E_SET) {
+        return out_err(out, ERR_BAD_TYPE, "zqueryge");
+    }
+    ZSet &zset = std::get<ZSet>(e->val);
 
-int main() {
+    double score;
+    std::string name;
+    int64_t offset;
+    int64_t limit;
+    try {
+        score = std::stod(cmd[2]);
+        name = cmd[3];
+        offset = std::stol(cmd[4]);
+        limit = std::stol(cmd[5]);
+    }
+    catch (std::invalid_argument& exc) {
+        return out_err(out, ERR_BAD_TYPE, exc.what());
+    }
+    catch (std::exception& exc) {
+        return out_err(out, ERR_UNEXPECTED, exc.what());
+    }
+
+    ZNode *znode = zset.seekge(score, name.data(), name.size());
+    znode = ZNode::offset(znode, offset);
+    size_t ctx = out_begin_arr(out);
+    uint32_t n = 0;
+    size_t b_written = 0;
+    while (znode && n / 2 < limit) {
+        b_written += out_str(out, znode->name.data(), znode->len);
+        b_written += out_dbl(out, znode->score);
+        znode = ZNode::offset(znode, +1);
+        n += 2;
+    }
+    b_written += out_end_arr(out, ctx + b_written, n);
+    return b_written;
+}
+//zqueryle key score name offset limit
+uint32_t Server::do_zqueryle(std::vector<std::string> &cmd, Buffer &out) {
+    Entry *e = data_lookup(cmd[1]);
+    if (!e) {
+        return out_err(out, ERR_NOT_FOUND, "zqueryge");
+    }
+    if (e->type != E_SET) {
+        return out_err(out, ERR_BAD_TYPE, "zqueryge");
+    }
+    ZSet &zset = std::get<ZSet>(e->val);
+
+    double score;
+    std::string name;
+    int64_t offset;
+    int64_t limit;
+    try {
+        score = std::stod(cmd[2]);
+        name = cmd[3];
+        offset = std::stol(cmd[4]);
+        limit = std::stol(cmd[5]);
+    }
+    catch (std::invalid_argument& exc) {
+        return out_err(out, ERR_BAD_TYPE, exc.what());
+    }
+    catch (std::exception& exc) {
+        return out_err(out, ERR_UNEXPECTED, exc.what());
+    }
+
+    ZNode *znode = zset.seekle(score, name.data(), name.size());
+    znode = ZNode::offset(znode, offset);
+    size_t ctx = out_begin_arr(out);
+    int64_t n = 0;
+    size_t b_written = 0;
+    while (znode && n / 2 < limit) {
+        b_written += out_str(out, znode->name.data(), znode->len);
+        b_written += out_dbl(out, znode->score);
+        znode = ZNode::offset(znode, -1);
+        n += 2;
+    }
+    b_written += out_end_arr(out, ctx + b_written, static_cast<uint32_t>(n));
+    return b_written;
+}
+//zrank key name
+uint32_t Server::do_zrank(std::vector<std::string> &cmd, Buffer &out) {
+    Entry *e = data_lookup(cmd[1]);
+    if (!e) {
+        return out_err(out, ERR_NOT_FOUND, "zqueryge");
+    }
+    if (e->type != E_SET) {
+        return out_err(out, ERR_BAD_TYPE, "zqueryge");
+    }
+    ZSet &zset = std::get<ZSet>(e->val);
+
+    std::string &name = cmd[2];
+    const int64_t rank = zset.rank(name);
+    return out_int(out, rank);
+}
+//zcount key min_score max_score
+uint32_t Server::do_zcount(std::vector<std::string> &cmd, Buffer &out){
+    Entry *e = data_lookup(cmd[1]);
+    if (!e) {
+        return out_err(out, ERR_NOT_FOUND, "zqueryge");
+    }
+    if (e->type != E_SET) {
+        return out_err(out, ERR_BAD_TYPE, "zqueryge");
+    }
+    ZSet &zset = std::get<ZSet>(e->val);
+
+    double min_score = stod(cmd[2]);
+    double max_score = stod(cmd[3]);
+    int64_t count = 0;
+    ZNode *found = zset.seekge(min_score, nullptr, 0);
+    while (found && found->score <= max_score) {
+        ++count;
+        AVLNode* node = AVLNode::offset(&found->tree_node, +1);
+        found = container_of(node, ZNode, tree_node);
+    }
+    return out_int(out, count);
+}
+int main(int argc, char** argv) {
     Server::init();
     Server::main_loop();
 }

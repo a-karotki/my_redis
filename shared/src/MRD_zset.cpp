@@ -73,7 +73,7 @@ void ZSet::set_cpy(AVLNode* node, ZSet *to_cpy) {
     set_cpy(node->right, to_cpy);
 }
 
-ZSet::ZSet(const ZSet &rhs){
+ZSet::ZSet(const ZSet &rhs) : hmap(){
     set_cpy(rhs.root, this);
 }
 

@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <vector>
 #include <cassert>
+#include <iostream>
 #include <string>
 #include "MRD_buffer.h"
 #ifndef DBL_SIZE
@@ -22,7 +23,25 @@ namespace MRD{
         TAG_INT = 3,    // int64
         TAG_DBL = 4,    // double
         TAG_ARR = 5,    // array
+        ERR_BAD_TYPE = 0,
+        ERR_NOT_FOUND = 1,
+        ERR_OUT_OF_RANGE = 2,
+        ERR_UNEXPECTED = 3,
     };
+    static std::string get_err(uint_8t err) {
+        switch (err) {
+            case ERR_BAD_TYPE:
+                return "ERR_BAD_TYPE";
+            case ERR_NOT_FOUND:
+                return "ERR_NOT_FOUND";
+            case ERR_OUT_OF_RANGE:
+                return "ERR_OUT_OF_RANGE";
+            case ERR_UNEXPECTED:
+                return "ERR_UNEXPECTED";
+            default:
+                return "Unknown error code";
+        }
+    }
     //return bytes written
     static uint32_t out_nil(Buffer &out) {
         out.append_u8(TAG_NIL);
@@ -57,19 +76,24 @@ namespace MRD{
     static uint32_t out_begin_arr(Buffer &out) {
         return out_arr(out, 0) - 1; //bytes written without tag
     }
-    // ctx - n size, returns the size of arr TAG + len bytes
+    /*
+     *ctx - bytes written without tag
+     *n - number of elements
+     *fills the number of elements in the beginning of the array
+     */
     static uint32_t out_end_arr(Buffer &out, uint32_t ctx, uint32_t n) {
-        assert(*(out.data_end - n - ctx) == TAG_ARR);
-        memcpy(out.data_end - n - ctx, &n, 4);
+        assert(*(out.data_end - ctx - 1) == TAG_ARR);
+        memcpy(out.data_end- ctx, &n, 4);
         return 1 + 4;
     }
-    static uint32_t out_err(Buffer &out, const std::string& msg) {
+    static uint32_t out_err(Buffer &out, uint8_t err_typ, const std::string& msg) {
         out.append_u8(TAG_ERR);
+        out.append_u8(err_typ);
         out.append_u32(msg.length());
         uint8_t interpreted[msg.length()];
         memcpy(interpreted, msg.data(), msg.length());
         out.append(interpreted, msg.length());
-        return 1 + 4 + msg.length();
+        return 1 + 1 + 4 + msg.length();
     }
 
     static bool read_u32(const uint8_t *&cur, const uint8_t *end, uint32_t &out) {
@@ -100,12 +124,12 @@ namespace MRD{
 
     constexpr size_t MAX_MSG = 1 << 20;
     static void msg(const char *msg) {
-        fprintf(stderr, "%s\n", msg);
+        std::cout << msg << std::endl;
     }
 
     static void die(const char *msg) {
         int err = errno;
-        fprintf(stderr, "[%d] %s\n", err, msg);
+        std::cerr << err << " " << msg << std::endl;
         abort();
     }
     static int32_t read_full(int fd, char *buf, size_t n) {
@@ -155,6 +179,9 @@ namespace MRD{
         uint8_t interpreted[len];
         memcpy(interpreted, data, len);
         return str_hash(interpreted, len);
+    }
+    static uint64_t str_hash(const std::string& str) {
+        return str_hash(str.data(), str.length());
     }
 }
 
