@@ -27,10 +27,18 @@ namespace MRD{
         void init(size_t n);
         void insert(HNode *node);
 
+        HTab() = default; //zombie
+        ~HTab();
+        HTab(const HTab& other) = delete;
+        HTab& operator=(HTab& rhs) = delete;
+        HTab(HTab&& other) noexcept;
+        HTab& operator=(HTab&& rhs) noexcept;
+
         HNode **lookup(HNode &key, bool (&eq)(HNode &, HNode &)) const;
         HNode *detach(HNode **from);
         bool foreach(bool (*f) (HNode*, void *), void* arg) const;
         void clear();
+        friend void swap(HTab& lhs, HTab& rhs) noexcept;
     };
 
 
@@ -42,6 +50,7 @@ namespace MRD{
         void insert(HNode *node);
         HNode *lookup(HNode &key, bool (&eq)(HNode&, HNode&)) const;
         void foreach(bool (*f) (HNode*, void*), void* arg);
+        friend void swap(HashMap& lhs, HashMap& rhs) noexcept;
     private:
         const size_t k_rehashing_work = 128;
         const size_t k_max_load_factor = 8;

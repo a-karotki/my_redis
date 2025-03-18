@@ -105,13 +105,15 @@ MRD::AVLNode * MRD::AVLNode::predscessor(AVLNode *node) {
 }
 
 int64_t MRD::AVLNode::rank(AVLNode *node) {
-    int64_t rank = 0;
+    int64_t rank = 1;
     if (node->left) {
         rank += AVLNode::cnt(node->left);
     }
     AVLNode* parent = node->parent;
-    if (parent && parent->right == node) {
+    while (parent && parent->right == node) {
         rank += AVLNode::cnt(parent->left) + 1;
+        node = parent;
+        parent = node->parent;
     }
     return rank;
 }

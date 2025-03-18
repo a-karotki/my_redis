@@ -23,6 +23,22 @@ void HTab::insert(HNode *node) {
     tab[pos] = node;
     size++;
 }
+
+HTab::~HTab() {
+    free(tab);
+}
+
+HTab::HTab(HTab &&other) noexcept : HTab() {
+    swap(*this, other);
+}
+
+HTab & HTab::operator=(HTab &&rhs) noexcept {
+    swap(*this, rhs);
+    return *this;
+}
+
+
+
 // hashtable look up subroutine.
 // Pay attention to the return value. It returns the address of
 // the parent pointer that owns the target node,
@@ -66,6 +82,12 @@ void HTab::clear() {
     size = 0;
 }
 
+void MRD::swap(HTab &lhs, HTab &rhs) noexcept {
+    std::swap(lhs.tab, rhs.tab);
+    std::swap(lhs.mask, rhs.mask);
+    std::swap(lhs.size, rhs.size);
+}
+
 void HashMap::help_rehashing() {
     size_t nwork = 0;
     while (nwork < k_rehashing_work && older.size > 0) {
@@ -85,7 +107,7 @@ void HashMap::help_rehashing() {
 }
 void HashMap::trigger_rehashing() {
     assert(older.tab == nullptr);
-    older = newer;
+    older = std::move(newer);
     newer.init((newer.mask + 1) * 2);
     migrate_pos = 0;
 }
@@ -120,6 +142,7 @@ void HashMap::insert(HNode *node) {
     help_rehashing();
 }
 
+
 HNode *HashMap::erase(HNode &key, bool (&eq)(HNode&, HNode&)) {
     help_rehashing();
     if (HNode **from = newer.lookup(key, eq)) {
@@ -140,3 +163,9 @@ size_t HashMap::size() const {
     return newer.size + older.size;
 }
 
+
+void MRD::swap(HashMap &lhs, HashMap &rhs) noexcept {
+    swap(lhs.newer, rhs.newer);
+    swap(lhs.older, rhs.older);
+    std::swap(lhs.migrate_pos, rhs.migrate_pos);
+}

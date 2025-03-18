@@ -14,9 +14,8 @@ namespace MRD {
         double score = 0;
         size_t len = 0;
         std::string name = std::string();
-
-        ZNode() = default;
         ZNode(const char* name_, size_t len_, double score_);
+        ZNode(const std::string& name, double score_);
         // ~ZNode();
         static ZNode *offset(ZNode *node, int64_t offset);
     };
@@ -24,22 +23,39 @@ namespace MRD {
         AVLNode *root = nullptr;
         HashMap hmap;
 
-        ZNode *lookup(const char *name, size_t len) const;
+        ZSet() = default; //zombie
+        ~ZSet();
+        ZSet(const ZSet & rhs);
+        ZSet(ZSet && other) noexcept;
+        ZSet& operator=(ZSet rhs);
+        ZSet& operator=(ZSet &&rhs) noexcept;
 
-        void del(ZNode* node);
-
+        bool rem(const std::string &name);
         void update(ZNode * node, double score);
 
         bool insert(const char* name, size_t len, double score);
+
+        int64_t rank(const std::string &name) const;
+
 
         ZNode *seekge(double score, const char* name, size_t len);
 
         ZNode *seekle(double score, const char* name, size_t len);
 
+        ZNode *lookup(const char *name, size_t len) const;
+        friend void swap(ZSet &lhs, ZSet &rhs) noexcept;
     private:
+
+        void del(ZNode* node);
+
+
         void tree_insert(ZNode* node);
 
         bool tree_delete(ZNode *node);
+
+        void tree_dispose(AVLNode *node);
+
+        static void set_cpy(AVLNode* tree_node, ZSet *to_cpy);
 
         static bool hcmp(HNode &node_, HNode &key);
 
@@ -51,6 +67,8 @@ namespace MRD {
 
         static bool zeq(AVLNode *lhs, AVLNode *rhs);
     };
+
+
 }
 
 

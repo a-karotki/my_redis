@@ -16,78 +16,23 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-add_executable(
-        hashmap_test
-        hashmap_test.cpp
-)
-add_executable(
-        buffer_test
-        buffer_test.cpp
-)
-add_executable(
-        utility_test
-        utility_test.cpp
-)
-add_executable(
-        avl_test
-        avl_test.cpp
-)
-add_executable(
-        zset_test
-        zset_test.cpp
-)
-target_link_libraries(
-        hashmap_test
-        PRIVATE
-        MRD_shared_hashtable
-        GTest::gtest_main
-)
-target_link_libraries(
-        buffer_test
-        PRIVATE
-        GTest::gtest_main
-)
-target_link_libraries(
-        utility_test
-        PRIVATE
-        GTest::gtest_main
-)
-target_link_libraries(
-        avl_test
-        PRIVATE
-        GTest::gtest_main
-        MRD_shared_avl
-)
-target_link_libraries(
-        zset_test
-        PRIVATE
-        GTest::gtest_main
-        MRD_shared_zset
-)
-target_include_directories(
-        utility_test
-        PRIVATE
-        ${MRD_shared_include_dir}
-)
-target_include_directories(
-        buffer_test
-        PRIVATE
-        ${MRD_server_dir}
-        ${MRD_shared_include_dir}
-)
-target_include_directories(
-        avl_test
-        PRIVATE
-        ${MRD_shared_include_dir}
-)
-target_include_directories(
-        zset_test
-        PRIVATE
-        ${MRD_shared_include_dir}
-)
+
+
+set(TEST_LIST hashmap_test buffer_test utility_test zset_test avl_test server_test)
+
+foreach (x ${TEST_LIST})
+    add_executable(${x} ${x}.cpp)
+    target_include_directories(${x} PRIVATE ${MRD_shared_include_dir})
+    target_link_libraries(${x} PRIVATE GTest::gtest_main)
+endforeach ()
+
+target_include_directories(server_test PRIVATE ${MRD_server_dir})
+
+target_link_libraries(hashmap_test PRIVATE  MRD_shared_hashtable)
+target_link_libraries(zset_test PRIVATE MRD_shared_zset)
+target_link_libraries(avl_test PRIVATE MRD_shared_avl)
+
 include(GoogleTest)
-gtest_discover_tests(hashmap_test)
-gtest_discover_tests(buffer_test)
-gtest_discover_tests(utility_test)
-gtest_discover_tests(avl_test)
-gtest_discover_tests(zset_test)
+foreach (x ${TEST_LIST})
+    gtest_discover_tests(${x})
+endforeach ()
