@@ -197,6 +197,10 @@ namespace MRD {
                 break;
             }
             err = read_res(fd);
+            if (err < 0){
+                std::cout << "server closed the connection" << std::endl;
+                break;
+            }
         }
 
         close(fd);

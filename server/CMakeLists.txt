@@ -9,6 +9,7 @@ target_link_libraries(MRD_server
         MRD_shared_zset
         MRD_shared_avl
         MRD_shared_dlist
+        MRD_shared_heap
         )
 
 # Include the server's headers

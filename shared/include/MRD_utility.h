@@ -167,7 +167,7 @@ namespace MRD{
     }
     static int32_t write_all(const int fd, const Buffer& buf) {
         const auto p = reinterpret_cast<const char *>(buf.data_begin); //not UB
-        write_all(fd, p, buf.data_length);
+        return write_all(fd, p, buf.data_length);
     }
     static void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len) {
         buf.insert(buf.end(), data, data + len);

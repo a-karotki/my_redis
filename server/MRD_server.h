@@ -16,6 +16,7 @@
 #include "MRD_utility.h"
 #include "MRD_zset.h"
 #include <ctime>
+#include "MRD_heap.h"
 
 namespace MRD {
 
@@ -29,6 +30,8 @@ namespace MRD {
         struct HNode node;  // hashtable node
         std::string key;
         uint32_t type = 0;
+        size_t heap_idx = -1;
+
         std::variant<
             std::string, //KV value
             ZSet//set
@@ -102,8 +105,11 @@ namespace MRD {
         static inline std::vector<Conn* > fd2conn;
         static HashMap g_data;
         static DList idle_list;
+        static std::vector<HeapItem> ttl_heap;
 
-        static constexpr uint64_t IDLE_TIMEOUT_MS = 10000;
+        static constexpr uint64_t IDLE_TIMEOUT_MS = 300000;
+        static constexpr uint64_t DEFAULT_TTL_MS = 900000;
+        static constexpr size_t MAX_WORKS = 2000;
         // static std::map<std::string, std::string> g_data;
 
         static Conn *handle_accept(int fd);
@@ -112,7 +118,11 @@ namespace MRD {
 
         static void conn_destroy(Conn * conn);
 
+        static void entry_del(Entry * ent);
+
         static void process_timers();
+
+        static void entry_set_ttl(Entry* ent, int64_t ttl_ms);
 
         //NOTE: handles only string tag
         static int32_t parse_req(const uint8_t *&data, size_t size, std::vector<std::string> &out);
@@ -154,6 +164,10 @@ namespace MRD {
 
         //ZCOUNT key min_score max_score
         static uint32_t do_zcount(std::vector<std::string> &cmd, Buffer &out);
+        //EXPIRE name time_ms (-1 to remove expiration)
+        static uint32_t do_expire(std::vector<std::string> &cmd, Buffer &out);
+        //TTL name (doesn't refresh ttl)
+        static uint32_t do_ttl(std::vector<std::string> &cmd, Buffer &out);
     };
 }
 #endif //MRD_SERVER_H

@@ -19,9 +19,11 @@
 
 #include <iomanip>
 #include <map>
+#include <MRD_heap.h>
 using namespace MRD;
 // int Server::fd = -1;
 DList Server::idle_list{};
+std::vector<HeapItem> Server::ttl_heap{};
 static void fd_set_nb(int fd) {
     fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
     if (errno) {
@@ -54,8 +56,16 @@ uint64_t Server::next_timer_ms() {
     if (DList::empty(&idle_list))
         return -1;
     uint64_t now_ms = get_monotonic_msec();
-    Conn *conn = container_of(idle_list.next, Conn,  idle_node);
-    uint64_t next_ms = conn->last_active_ms + IDLE_TIMEOUT_MS;
+    uint64_t next_ms = -1;
+    if (!DList::empty(&idle_list)){
+        Conn *conn = container_of(idle_list.next, Conn,  idle_node);
+        next_ms = conn->last_active_ms + IDLE_TIMEOUT_MS;
+    }
+    if (!ttl_heap.empty() && ttl_heap[0].val < next_ms) {
+        next_ms = ttl_heap[0].val;
+    }
+    if (next_ms == -1)
+        return next_ms;
     if (next_ms <= now_ms)
         return 0;
     return next_ms - now_ms;
@@ -68,6 +78,11 @@ void Server::conn_destroy(Conn *conn) {
     delete conn;
 }
 
+void Server::entry_del(Entry *ent) {
+    entry_set_ttl(ent, -1);
+    delete ent;
+}
+
 void Server::process_timers() {
     uint64_t now_ms = get_monotonic_msec();
     while (!DList::empty(&idle_list)) {
@@ -77,6 +92,25 @@ void Server::process_timers() {
             break;
         std::cout << "Removing idle connection: " << conn->fd << std::endl;
         conn_destroy(conn);
+    }
+    size_t works = 0;
+    while (!ttl_heap.empty() && ttl_heap[0].val < now_ms && works++ < MAX_WORKS) {
+        Entry *ent = container_of(ttl_heap[0].ref, Entry, heap_idx);
+        std::cout << "Removing expired entry: " << ent->key << std::endl;
+        g_data.erase(ent->node, entry_eq);
+        entry_del(ent);
+    }
+}
+
+void Server::entry_set_ttl(Entry *ent, int64_t ttl_ms) {
+    if (ttl_ms < 0 && ent->heap_idx != static_cast<size_t>(-1)) {
+        HeapItem::erase(ttl_heap, ent->heap_idx);
+        ent->heap_idx = -1;
+    }
+    else if (ttl_ms >= 0) {
+        uint64_t expire_at = get_monotonic_msec() + ttl_ms;
+        HeapItem item = {expire_at, &ent->heap_idx};
+        HeapItem::upsert(ttl_heap, ent->heap_idx, item);
     }
 }
 
@@ -144,6 +178,12 @@ size_t Server::do_request(std::vector<std::string> &cmd, Buffer &out) {
     }
     if (cmd.size() == 3 && cmd[0] == "ZRANK") {
         return do_zrank(cmd, out);
+    }
+    if (cmd.size() == 3 && cmd[0] == "EXPIRE") {
+        return do_expire(cmd, out);
+    }
+    if (cmd.size() == 2 && cmd[0] == "TTL") {
+        return do_ttl(cmd, out);
     }
     return out_err(out, ERR_NOT_FOUND, "command not found");
     return 0;
@@ -366,9 +406,10 @@ uint32_t Server::do_set(std::vector<std::string> &cmd, Buffer &out) {
         entry->val = cmd[2];
     }
     else {
-        Entry *e = Entry::EntryKV(cmd[1], cmd[2]);
-        g_data.insert(&e->node);
+        entry = Entry::EntryKV(cmd[1], cmd[2]);
+        g_data.insert(&entry->node);
     }
+    entry_set_ttl(entry, DEFAULT_TTL_MS);
     return out_nil(out);
 }
 //del key
@@ -380,7 +421,7 @@ uint32_t Server::do_del(std::vector<std::string> &cmd, Buffer &out) {
     if (found) {
         // deallocate the pair
         Entry *e = container_of(found, Entry, node);
-        delete e;
+        entry_del(e);
         return out_int(out, 1); //number of removed elements
     }
     return out_err(out,ERR_NOT_FOUND, "del: given key does not exist");
@@ -402,6 +443,7 @@ uint32_t Server::do_zadd(std::vector<std::string> &cmd, Buffer &out) {
     }
     if (!e) {
         Entry *entry = Entry::EntryS(cmd[1]);
+        entry_set_ttl(entry, DEFAULT_TTL_MS);
         g_data.insert(&entry->node);
         std::get<ZSet>(entry->val).insert(name.data(), name.length(), score);
         return out_nil(out);
@@ -410,6 +452,7 @@ uint32_t Server::do_zadd(std::vector<std::string> &cmd, Buffer &out) {
         if (e->type != E_SET)
             return out_err(out, ERR_BAD_TYPE, "zadd: expexcted set Entry");
         std::get<ZSet>(e->val).insert(name.data(), name.length(), score);
+        entry_set_ttl(e, DEFAULT_TTL_MS);
         return out_nil(out);
     }
 }
@@ -525,6 +568,8 @@ uint32_t Server::do_zrank(std::vector<std::string> &cmd, Buffer &out) {
 
     std::string &name = cmd[2];
     const int64_t rank = zset.rank(name);
+
+    entry_set_ttl(e, DEFAULT_TTL_MS);
     return out_int(out, rank);
 }
 //zcount key min_score max_score
@@ -549,6 +594,34 @@ uint32_t Server::do_zcount(std::vector<std::string> &cmd, Buffer &out){
     }
     return out_int(out, count);
 }
+//EXPIRE name time_ms
+uint32_t Server::do_expire(std::vector<std::string> &cmd, Buffer &out) {
+    Entry *e = data_lookup(cmd[1]);
+    if (!e) {
+        return out_err(out, ERR_NOT_FOUND, "expire");
+    }
+    int64_t ttl_ms;
+    try {
+        ttl_ms = std::stoi(cmd[2]);
+    }
+    catch (std::invalid_argument& exc) {
+        return out_err(out, ERR_BAD_TYPE, exc.what());
+    }
+    catch (std::exception& exc) {
+        return out_err(out, ERR_UNEXPECTED, exc.what());
+    }
+    entry_set_ttl(e, ttl_ms);
+    return out_nil(out);
+}
+//TTL name
+uint32_t Server::do_ttl(std::vector<std::string> &cmd, Buffer &out) {
+    Entry *e = data_lookup(cmd[1]);
+    if (!e)
+        return out_err(out, ERR_NOT_FOUND, "ttl");
+    return out_int(out, static_cast<int64_t>(ttl_heap[e->heap_idx].val));
+}
+
+
 int main(int argc, char** argv) {
     Server::init();
     Server::main_loop();
