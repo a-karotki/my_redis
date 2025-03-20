@@ -174,6 +174,8 @@ namespace MRD {
             size_t pos = 0;
             if (str == "EXIT")
                 break;
+            if (str.empty())
+                continue;
             while ((pos = str.find(' ')) != std::string::npos) {
                 std::string token = str.substr(0, pos);
                 if (token == " ")

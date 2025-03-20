@@ -16,16 +16,20 @@
 
 #include "MRD_buffer.h"
 #include "MRD_server.h"
+
+#include <iomanip>
 #include <map>
 using namespace MRD;
 // int Server::fd = -1;
+DList Server::idle_list{};
 static void fd_set_nb(int fd) {
     fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
     if (errno) {
         die("fcntl error");
     }
 }
-static Conn *handle_accept(int fd) {
+
+Conn *Server::handle_accept(int fd) {
     struct sockaddr_in client_addr = {};
     socklen_t socklen = sizeof(client_addr);
     int connfd = accept(fd, (struct sockaddr *)&client_addr, &socklen);
@@ -41,7 +45,39 @@ static Conn *handle_accept(int fd) {
     Conn* conn = new Conn();
     conn->fd = connfd;
     conn->want_read = true;
+    conn->last_active_ms = get_monotonic_msec();
+    DList::insert_before(&conn->idle_node, &idle_list);
     return conn;
+}
+
+uint64_t Server::next_timer_ms() {
+    if (DList::empty(&idle_list))
+        return -1;
+    uint64_t now_ms = get_monotonic_msec();
+    Conn *conn = container_of(idle_list.next, Conn,  idle_node);
+    uint64_t next_ms = conn->last_active_ms + IDLE_TIMEOUT_MS;
+    if (next_ms <= now_ms)
+        return 0;
+    return next_ms - now_ms;
+}
+
+void Server::conn_destroy(Conn *conn) {
+    (void)close(conn->fd);
+    fd2conn[conn->fd] = nullptr;
+    DList::detach(&conn->idle_node);
+    delete conn;
+}
+
+void Server::process_timers() {
+    uint64_t now_ms = get_monotonic_msec();
+    while (!DList::empty(&idle_list)) {
+        Conn *conn = container_of(idle_list.next, Conn, idle_node);
+        uint64_t next_ms = conn->last_active_ms + IDLE_TIMEOUT_MS;
+        if (next_ms >= now_ms)
+            break;
+        std::cout << "Removing idle connection: " << conn->fd << std::endl;
+        conn_destroy(conn);
+    }
 }
 
 
@@ -242,7 +278,8 @@ int Server::main_loop() {
             }
             poll_args.push_back(pfd);
         }
-        int rv = poll(poll_args.data(), (nfds_t) poll_args.size(), -1);
+        int32_t timeout_ms = static_cast<int32_t>(next_timer_ms());
+        int rv = poll(poll_args.data(), (nfds_t) poll_args.size(), timeout_ms);
         if (rv < 0 && errno == EINTR) {
             continue;
         }
@@ -258,8 +295,14 @@ int Server::main_loop() {
             }
         }
         for (size_t i = 1; i < poll_args.size(); ++i) {
-           uint32_t ready = poll_args[i].revents;
+            uint32_t ready = poll_args[i].revents;
+            if (ready == 0) {
+                continue;
+            }
             Conn* conn = fd2conn[poll_args[i].fd];
+            conn->last_active_ms = get_monotonic_msec();
+            DList::detach(&conn->idle_node);
+            DList::insert_before(&idle_list, &conn->idle_node);
             if (ready & POLLIN) {
                 handle_read(conn);
             }
@@ -267,11 +310,10 @@ int Server::main_loop() {
                 handle_write(conn);
             }
             if (ready & POLLERR || conn->want_close) {
-                (void)close(conn->fd);
-                fd2conn[conn->fd] = nullptr;
-                delete conn;
+                conn_destroy(conn);
             }
         }
+        process_timers();
     }
     return 0;
 }

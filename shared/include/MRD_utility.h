@@ -11,11 +11,19 @@
 #include <iostream>
 #include <string>
 #include "MRD_buffer.h"
+#include <time.h>
 #ifndef DBL_SIZE
 #define DBL_SIZE sizeof(double)
 #endif
 
 namespace MRD{
+
+    static uint64_t get_monotonic_msec() {
+        struct timespec tv = {0, 0};
+        clock_gettime(CLOCK_MONOTONIC, &tv);
+        return static_cast<uint64_t>(tv.tv_sec) * 1000 + tv.tv_nsec / 1000 / 1000;
+    }
+
     enum uint_8t {
         TAG_NIL = 0,    // nil
         TAG_ERR = 1,    // error code + msg
