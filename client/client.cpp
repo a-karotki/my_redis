@@ -66,7 +66,7 @@ namespace MRD {
                 msg("bad response");
                 return -1;
             }
-            std::cout << "(str) " << len << ' ' << std::string_view(reinterpret_cast<const char*>(&data[5]), len) << std::endl;
+            std::cout << "(str) len = " << len << ' ' << std::string_view(reinterpret_cast<const char*>(&data[5]), len) << std::endl;
             return 1 + 4 + len;
         }
     case TAG_INT:
