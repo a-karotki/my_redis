@@ -20,4 +20,4 @@ CMakeUserPresets.json
 *log.txt
 logs/
 
-test_cases.txt
+test/test_cases.txt
