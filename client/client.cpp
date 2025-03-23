@@ -25,7 +25,7 @@ namespace MRD {
         if (len > MAX_MSG) {
             return -1;
         }
-        *b.data_begin = len;
+        memcpy(b.data_begin, &len, 4);
         return write_all(fd, b);
     }
     static int32_t print_response(const uint8_t *data, size_t size) {

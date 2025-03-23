@@ -5,7 +5,7 @@
 #ifndef MRD_SERVER_H
 #define MRD_SERVER_H
 
-#define MAX_CMDS 7
+#define MAX_CMDS 500
 
 #include <map>
 #include "MRD_DList.h"
@@ -168,6 +168,8 @@ namespace MRD {
         static uint32_t do_expire(std::vector<std::string> &cmd, Buffer &out);
         //TTL name (doesn't refresh ttl)
         static uint32_t do_ttl(std::vector<std::string> &cmd, Buffer &out);
+
+        static uint32_t do_echo(std::vector<std::string> &cmd, Buffer &out);
     };
 }
 #endif //MRD_SERVER_H

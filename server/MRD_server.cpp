@@ -185,6 +185,9 @@ size_t Server::do_request(std::vector<std::string> &cmd, Buffer &out) {
     if (cmd.size() == 2 && cmd[0] == "TTL") {
         return do_ttl(cmd, out);
     }
+    if (cmd.size() >= 1 && cmd[0] == "ECHO") {
+        return do_echo(cmd, out);
+    }
     return out_err(out, ERR_NOT_FOUND, "command not found");
     return 0;
 }
@@ -619,6 +622,15 @@ uint32_t Server::do_ttl(std::vector<std::string> &cmd, Buffer &out) {
     if (!e)
         return out_err(out, ERR_NOT_FOUND, "ttl");
     return out_int(out, static_cast<int64_t>(ttl_heap[e->heap_idx].val));
+}
+
+uint32_t Server::do_echo(std::vector<std::string> &cmd, Buffer &out) {
+    std::string output{};
+    for (int i = 1; i != cmd.size(); ++i) {
+        output.append(cmd[i]);
+        output.append(" ");
+    }
+    return out_str(out, output);
 }
 
 
