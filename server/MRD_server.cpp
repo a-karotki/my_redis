@@ -24,6 +24,7 @@ using namespace MRD;
 // int Server::fd = -1;
 DList Server::idle_list{};
 std::vector<HeapItem> Server::ttl_heap{};
+bool Server::is_running = true;
 static void fd_set_nb(int fd) {
     fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
     if (errno) {
@@ -188,6 +189,10 @@ size_t Server::do_request(std::vector<std::string> &cmd, Buffer &out) {
     if (cmd.size() >= 1 && cmd[0] == "ECHO") {
         return do_echo(cmd, out);
     }
+    if (cmd.size() >= 1 && cmd[0] == "SDIE") {
+        is_running = false;
+        return out_str(out, "killing server");
+    }
     return out_err(out, ERR_NOT_FOUND, "command not found");
     return 0;
 }
@@ -304,7 +309,7 @@ ZSet *Server::expect_zset(Entry *entry) {
 int Server::main_loop() {
 
     std::vector<struct pollfd> poll_args;
-    while (true) {
+    while (is_running) {
         poll_args.clear();
         struct pollfd server_pfd = {fd, POLLIN, 0};
         poll_args.push_back(server_pfd);
@@ -361,7 +366,30 @@ int Server::main_loop() {
     return 0;
 }
 
-void Server::init() {
+void Server::end_run() {
+    HNode* last_node = nullptr;
+    g_data.foreach([](HNode* node, void* arg) {
+        auto** l_node = static_cast<HNode **>(arg);
+        if (*l_node != nullptr) {
+            Entry* ent = container_of(*l_node, Entry, node);
+            std::cout << "Deleting " << ent->key <<std::endl;
+            entry_del(ent);
+        }
+        *l_node = node;
+        return true;
+    }, &last_node);
+    Entry* ent = container_of(last_node, Entry, node);
+    std::cout << "Deleting " << ent->key <<std::endl;
+    entry_del(ent);
+    g_data.clear();
+    ttl_heap.clear();
+    for (auto conn: fd2conn) {
+        delete conn;
+    }
+
+}
+
+void Server::init(int argc, char **argv) {
     Server::fd = -1;
     std::cout << "Starting server...\n" << std::endl;
     fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -376,7 +404,11 @@ void Server::init() {
     // bind
     struct sockaddr_in addr = {};
     addr.sin_family = AF_INET;
-    addr.sin_port = ntohs(1234);
+    in_port_t port = ntohs(1234);
+    if (argc > 1) {
+        port = ntohs(std::stoi(argv[1]));
+    }
+    addr.sin_port = port;
     addr.sin_addr.s_addr = ntohl(0);    // wildcard address 0.0.0.0
     int rv = bind(fd, (const sockaddr *)&addr, sizeof(addr));
     if (rv) {
@@ -635,6 +667,8 @@ uint32_t Server::do_echo(std::vector<std::string> &cmd, Buffer &out) {
 
 
 int main(int argc, char** argv) {
-    Server::init();
+    Server::init(argc, argv);
     Server::main_loop();
+    L_DONE:
+        Server::end_run();
 }

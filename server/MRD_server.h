@@ -90,7 +90,7 @@ namespace MRD {
 
     class Server {
     public:
-        static void init();
+        static void init(int argc, char **argv);
 
         /*
          * Expects to receive data in format:
@@ -100,12 +100,14 @@ namespace MRD {
          */
         static int main_loop();
 
+        static void end_run();
     private:
         static inline int fd;
         static inline std::vector<Conn* > fd2conn;
         static HashMap g_data;
         static DList idle_list;
         static std::vector<HeapItem> ttl_heap;
+        static bool is_running;
 
         static constexpr uint64_t IDLE_TIMEOUT_MS = 300000;
         static constexpr uint64_t DEFAULT_TTL_MS = 900000;
